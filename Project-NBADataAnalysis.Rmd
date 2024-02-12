@@ -1,0 +1,158 @@
+---
+title: 'Project 1: Shot Chart Data (No Free Throws Accounted)'
+author: "Austin Shih"
+date: '2022-09-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+- Shot Chart of Kevin Durant in the 2018-2019 Season 
+```{r}
+require(tidyverse)
+require(dplyr)
+
+nba <- read_csv('../data/nba_shotchartdetail_2018-19.csv')
+glimpse(nba)
+nba %>% 
+  filter(PLAYER_NAME == 'Kevin Durant') %>%
+  select(LOC_X,LOC_Y,SHOT_MADE_FLAG) %>%
+  ggplot(aes(x = LOC_X, y = LOC_Y, color = factor(SHOT_MADE_FLAG))) + 
+  geom_point(alpha = 0.5) + 
+  labs(title = "Kevin Durant Shot Chart", subtitle = "2018-19 Season") + 
+  geom_curve(x = -200, y = 0, xend = 200, yend = 0, curvature = -1.2, color = 'black') +
+  scale_color_manual(name = 'Make or Miss', 
+                     values = c('red', 'green'), 
+                     labels = c('Miss', 'Make'))
+```
+
+- Who had the highest shooting percentage among players who shot more than 500 shots in the season? 
+```{r}
+nba %>%
+  group_by(PLAYER_NAME) %>%
+  count(EVENT_TYPE) %>%
+  mutate(shooting_pct = n/sum(n)) %>%
+  filter(sum(n) > 500) %>%
+  filter(EVENT_TYPE == 'Made Shot') %>%
+  arrange(-shooting_pct) 
+```
+> Rudy Gobert had the highest shooting percentage at 66.9% 
+
+- League Average 
+```{r}
+league <- nba %>%
+  count(EVENT_TYPE) %>%
+  mutate(league_avg = n/sum(n)) %>%
+  filter(EVENT_TYPE == 'Made Shot') %>%
+  select(league_avg)
+
+player <- nba %>%
+  group_by(PLAYER_NAME) %>%
+  count(EVENT_TYPE) %>%
+  mutate(shooting_pct = n/sum(n)) %>%
+  filter(EVENT_TYPE == 'Made Shot') %>%
+  arrange(-shooting_pct) 
+
+shooting <- NULL
+shooting <- cbind(player, league) 
+
+shooting %>%
+  ggplot(aes(x = shooting_pct, y = n)) + 
+  geom_point(alpha = 0.5) + 
+  geom_vline(xintercept = 0.4605072, color = 'red') + 
+  labs(title = 'Player Shooting Average vs NBA Shooting Average', 
+       x = 'Player - NBA Shooting Average', 
+       y = 'Number of Made Shots')
+```
+> The more shots a player makes, the closer a player's shooting average is to the NBA shooting average. 
+
+- Highest Point Scorers Per Month
+```{r}
+points <- nba %>%
+  mutate(GAME_DATE = as.Date(factor(GAME_DATE), format = '%Y%m%d')) %>%
+  group_by(PLAYER_NAME) %>%
+  mutate(points_scored = 0) %>%
+  filter(EVENT_TYPE == 'Made Shot') %>%
+  mutate(points_scored = ifelse(SHOT_TYPE == '3PT Field Goal', points_scored + 3,
+                                ifelse(SHOT_TYPE == '2PT Field Goal', points_scored + 2, points_scored + 0))) %>%
+  ungroup()
+
+points %>%
+  group_by(PLAYER_NAME) %>%
+  mutate(season_points = sum(points_scored)) %>%
+  select(PLAYER_NAME, season_points) %>%
+  distinct() %>%
+  arrange(-season_points)
+
+points <- points %>%
+  group_by(PLAYER_NAME,GAME_ID) %>%
+  mutate(game_points = sum(points_scored)) %>%
+  ungroup()
+
+points %>%
+  select(GAME_ID, PLAYER_NAME, GAME_DATE, game_points) %>%
+  distinct() %>% 
+  group_by(PLAYER_NAME,month = lubridate::floor_date(GAME_DATE, 'month')) %>%
+  mutate(month_points = sum(game_points)) %>%
+  select(PLAYER_NAME, month, month_points) %>%
+  distinct() %>%
+  arrange(-month_points)
+```
+> James Harden had the most amount of points scored in a month with 436 points in the month of January 2019. 
+
+- Average PPG for James Harden by month 
+```{r}
+points %>%
+  filter(PLAYER_NAME == 'James Harden') %>%
+  select(GAME_ID, PLAYER_NAME, GAME_DATE, game_points) %>%
+  distinct() %>% 
+  group_by(month = lubridate::floor_date(GAME_DATE, 'month')) %>%
+  mutate(month_points = sum(game_points)) %>%
+  select(PLAYER_NAME, month, month_points) %>%
+  distinct() %>%
+  ggplot(aes(x = month, y = month_points)) + 
+  geom_bar(stat = 'identity') + 
+  labs(title = 'James Harden - Total Points', 
+       subtitle = 'Not Counting Free Throws',
+       x = 'Month', 
+       y = 'Points in a Month')
+
+points %>%
+  filter(PLAYER_NAME == 'James Harden') %>%
+  select(GAME_ID, PLAYER_NAME, GAME_DATE, game_points) %>%
+  distinct() %>%
+  group_by(month = lubridate::floor_date(GAME_DATE, 'month')) %>%
+  mutate(avg_month_points = mean(game_points)) %>%
+  select(PLAYER_NAME, month, avg_month_points) %>%
+  distinct() %>%
+  ggplot(aes(x = month, y = avg_month_points)) + 
+  geom_bar(stat = 'identity') + 
+  labs(title = 'James Harden - PPG', 
+       subtitle = 'Not Counting Free Throws',
+       x = 'Month', 
+       y = 'Average PPG per month')
+```
+
+- James Harden Lowest Shooting % by Action
+```{r}
+nba %>%
+  filter(PLAYER_NAME == 'James Harden') %>%
+  select(PLAYER_NAME, EVENT_TYPE, ACTION_TYPE) %>%
+  mutate(bucket = 0) %>%
+  mutate(bucket = ifelse(EVENT_TYPE == 'Made Shot', bucket + 1, 0)) %>%
+  group_by(ACTION_TYPE) %>%
+  mutate(avg_per_shot = mean(bucket)) %>%
+  filter(EVENT_TYPE == 'Made Shot') %>%
+  distinct() %>%
+  arrange(avg_per_shot) %>%
+  head() %>%
+  ggplot(aes(x = avg_per_shot, y = ACTION_TYPE)) + 
+  geom_bar(stat = 'identity') + 
+  labs(title = 'James Harden: Lowest Shooting % per Action', 
+       x = 'Shooting %', 
+       y = '') +
+  scale_x_continuous(labels = scales::percent)
+  
+```

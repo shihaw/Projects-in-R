@@ -1,0 +1,327 @@
+---
+title: "Final Project"
+author: "Austin Shih"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(factoextra)
+library(psych)
+library(caret)
+library(car)
+```
+
+## 1. Data
+This dataset is called '2023_nba_player_stats'. It can be found on Kaggle, and it shows stats for each NBA player that played in the 2022-2023 regular season. The stats include name, position, team, age, games played, wins, losses, minutes played, field goals (made, attempted, percentage), three pointers (made, attempted, percentage), free throws (made, attempted, percentage), rebounds (offensive, defensive), steals, assists, turnovers, personal fouls, fantasy points, double doubles, triple doubles, and plus/minus. There are 539 players and 30 variables total in this data set. For those unfamiliar with basketball terms, field goals happen when a player shoots the basketball regardless of if it is either a two pointer or a three pointer. A player shoots a two pointer when they are in front of the three pointer line and shoots a three pointer when they are behind it. A free throw is when another player commits a foul on a player. The player who had the foul committed on them gets to shoot either one, two, or three free throws depending on the foul type. A rebound is when grabs the basketball if a player misses a shot. Rebounds can be offensive or defensive depending on who shoots the shot. An offensive rebound is more valuable than a defensive rebound since it allows another shot at getting a field goal. An assist is when a player passes the ball to another player and they score a point. A steal is when a player takes the ball away from the opposing player, and a turnover is when a player turns the ball over to the other team. Fantasy points are different from actual points because they are an accumulation of a player's contributions in various categories based on a person's fantasy basketball league. A double double is when a player ends a game with double digit values in two categories (10 points and 10 rebounds). A triple double is when a player has double digit values in three categories (10 points, 10 rebounds, 10 assists). Finally, plus/minus is the total difference between a player's team scoring and the opponents' scoring while the player is in the game. 
+
+```{r}
+data <- read.csv('../assignments/data/2023_nba_player_stats.csv')
+data <- na.omit(data)
+```
+
+## 2. Research Question
+My research question is: 'Can we predict how many minutes a player plays based on their in game stats?'
+
+This research question focuses on understanding how individual player performance correlates with how much time they play a game. I will investigate aspects such as points, rebounds, assists, steals, blocks, and other individual statistics to gain insights into the impact of a player's performance on their personal contributions to the game. While team outcomes won't be directly assessed in this case, the research can still provide valuable insights into the significance of player efficiency at an individual level within the NBA. 
+
+## 2.1 Hypotheses: 
+H0 (null): The better numbers a player has predicts more minutes a player will play. 
+
+H1 (alt): The better numbers a player has does not predict more minutes a player will play. 
+
+## 2.2 Variables of Interest
+- Player Efficiency Rating (PER): all-in-one rating, which attempts to collect or boil down all of a player's contributions into one number
+- points: total points by the player
+- three pointers made: total three pointers made by the player
+- assists: total assists by the player
+- rebounds: total rebounds by the player
+- offensive: total offensive rebounds by the player
+- defensive: total defensive rebouonds by the player
+- steals: total steals by the player
+- blocks: total blocks by the player
+- turnovers: total turnovers by the player
+- field goals missed: total FG missed by the player
+- free throws missed: total FT missed by the player
+- plus/minus: aggregate plus/minus over the entire season
+- minutes played: total minutes played by the player
+
+Below is the equation to calculate PER. 
+$$
+PER = (PTS+3PM+(1.5)OREB+DREB+AST+STL+BLK-TOV-FGMD-FTMD-PF) / Min
+$$
+
+## 2.3 Data Wrangling 
+First, I took out the columns that weren't of interest. Then, I calculated the field goals and free throws missed by subtracting the makes from the attempts. I calculated the PER and then filtered out the remaining columns I didn't need. 
+```{r}
+# get rid of columns of uninterest 
+data <- data %>%
+  select(-PName, -POS, -Team, -Age, -GP, -W, -L, -FP, -DD2, -TD3)
+# calculate number of field goals and free throws missed
+data$FGMD <- data$FGA - data$FGM
+data$FTMD <- data$FTA - data$FTM
+# calculate PER
+data$PER <- (data$PTS + data$X3PM + (1.5*data$OREB) + data$DREB + data$AST + data$STL + data$BLK - data$TOV - data$FGMD - data$FTMD - data$PF) / data$Min
+# filter only for players that played more than 1000 minutes to get rid of outliers
+# obtain only the variables of interest 
+data <- data %>%
+  filter(Min >= 1000) %>%
+  select(-FGM, -FGA, -FG., -X3PA, -X3P., -FTM, -FTA, -FT.)
+```
+
+```{r, fig.width=4, fig.height=3}
+hist(data$Min)
+```
+The minutes are skewed to the right, so I need to take the log of minutes. 
+
+```{r}
+# log minutes
+data$Min <- log(data$Min)
+hist(data$Min)
+```
+
+## 3. Visualization
+For this section, I created scatterplots of log(minutes) vs varaibles that are the most important in terms of basketball. All of them have positive correlations which make sense. The more you play, the more stats you log. 
+
+```{r, fig.width=4, fig.height=3}
+ggplot(data, aes(x = PER, y = Min)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = 'PER vs Min', x = 'PER', y = 'Min')
+```
+
+```{r, fig.width=4, fig.height=3}
+ggplot(data, aes(x = X..., y = Min)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = '+/- vs Min', x = '+/-', y = 'Min')
+```
+
+```{r, fig.width=4, fig.height=3}
+ggplot(data, aes(x = PTS, y = Min)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = 'PTS vs Min', x = 'PTS', y = 'Min')
+```
+
+```{r, fig.width=4, fig.height=3}
+ggplot(data, aes(x = REB, y = Min)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = 'Reb vs Min', x = 'Reb', y = 'Min')
+```
+
+```{r, fig.width=4, fig.height=3}
+ggplot(data, aes(x = AST, y = Min)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = 'AST vs Min', x = 'AST', y = 'Min')
+```
+
+```{r, fig.width=4, fig.height=3}
+ggplot(data, aes(x = TOV, y = Min)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = 'TOV vs Min', x = 'TOV', y = 'Min')
+```
+
+## 4. Principal Component Analysis
+I will perform principal component analysis to create more general variables for linear regression. 
+
+First, check for high correlation between variables. 
+```{r}
+cor(data)
+```
+There's above an 90% correlation between points/field goals missed and rebounds/defensive rebounds. Otherwise, there's no variables with high correlation. I will remove the field goals missed and rebounds from the data set since both variables are already reflected in the PER variable.
+
+```{r}
+data <- data %>%
+  select(-FGMD, -REB)
+```
+
+# 4.1 PCA Scaling and Visualization
+Now scale to make sure difference in scales doesn't cause additional variance. 
+
+```{r}
+# scale variables
+scaled_data <- scale(data)
+# Perform PCA
+data_pca <- prcomp(scaled_data, center = TRUE, scale. = TRUE)
+# Obtain summary
+summary(data_pca)
+```
+
+Here we visualize our PCA with a biplot. 
+```{r}
+# biplot
+fviz_pca_biplot(data_pca, 
+                repel = TRUE,
+                col.var = "#FC4E07", 
+                col.ind = "#00AFBB", 
+                label = "var")
+```
+
+## 4.2 Bartlett's Test and KMO
+Here we do the Bartlett's test to verify PCA
+
+```{r}
+cortest.bartlett(scaled_data)
+KMO(scaled_data)
+```
+Bartlett's test looks good. PER is below 0.5. AST and Min are also near the 0.5 threshold, so I will remove both of these from the dataset. 
+
+```{r}
+scaled_data <- data.frame(scaled_data)
+updated_scaled_data <- scaled_data %>%
+  select(-AST, -PER, -Min)
+```
+
+## 4.3 Baseline PCA
+Here we do our baseline PCA
+```{r, fig.width=4, fig.height=3}
+# PCA with {psych}
+initial_pca <- principal(updated_scaled_data, nfactors = ncol(updated_scaled_data), rotate = "none")
+# Plot
+plot(initial_pca$values, type = "b", ylab = "Eigenvalues"); abline(h = 1)
+```
+The plot shows that 3 components is the best option for the number of components, so we will rerun pca with 3 components instead of 10
+
+```{r}
+# PCA with {psych}
+new_pca <- principal(updated_scaled_data, nfactors = 3, rotate = "none")
+```
+
+```{r, fig.width=4, fig.height=3}
+corMatrix <- cor(updated_scaled_data)
+
+residuals <- factor.residuals(corMatrix, new_pca$loadings)
+hist(residuals)
+```
+The residuals look somewhat decent. 
+
+## 4.4 Informed PCA
+Now, we will do the final PCA with three components. 
+
+```{r}
+final_pca <- principal(updated_scaled_data, nfactors = 3, rotate = 'promax')
+plot(final_pca)
+```
+
+```{r}
+fa.diagram(final_pca)
+print.psych(final_pca)
+```
+From the PCA analysis, RC1 groups offensive and defensive rebounds, blocks, and personal fouls together. RC2 groups turnovers, points, 3 pointers made, free throws made, and steals together. RC3 just has plus/minus in its own group, but can also be grouped into RC2. From my knowledge of basketball, this seems pretty accurate as people who have a lot of rebounds and blocks are the tallest players on the court (people that play center or power forward). They also tend to have a lot of fouls occurred from off ball movement. All other categories are for primary ball handlers (point guard, shooting guard, shooting forward) as they shoot the ball, steal the ball, and turnover the ball more. 
+
+I asked ChatGPT to name the 3 groups based on the stats in each, and it gave these groups: 
+  1. Physicality
+    - Reflects a player's performance in terms of rebounding (offensive and defensive), shot-blocking ability, and personal fouls. This dimension may capture a player's physical presence on the court, especially in defensive aspects of the game.
+  2. Scoring Prowess
+    - Represents a player's scoring abilities, including points scored, three-pointers made, free throws made, and their ability to generate points. This dimension may highlight a player's offensive impact and scoring versatility.
+  3. Game Impact
+    - Captures a player's overall impact on the game, as reflected in the plus/minus statistic. This dimension may provide insights into a player's influence on their team's performance and effectiveness on both ends of the court.
+
+```{r}
+final_pca_scores <- as.data.frame(final_pca$scores) %>%
+  rename(physicality = RC1, 
+         scoring_prowess = RC2, 
+         game_impact = RC3)
+```
+
+# 5. Modeling Data
+Now, we will model the data using linear regression to see how well it predicts log(minutes)
+
+## 5.1 Final Wrangling and Correlation
+Add log(minutes) to the 3 components
+```{r}
+minutes <- data$Min
+
+reg <- cbind(minutes, final_pca_scores)
+cor(reg)
+```
+There is no high correlation between the components and log(minutes). Next, we'll do the 10-step cross-validation with stepwise feature selection to create a model. 
+
+## 5.2 10-step Cross Validation
+
+```{r}
+train.control <- trainControl(method = 'cv', number = 10)
+
+lm_cv10_step <- train(minutes ~ physicality + scoring_prowess + game_impact, data = reg, 
+                      method = 'leapSeq', #stepwise
+                      tuneGrid = data.frame(nvmax = 1:3), 
+                      trControl = train.control)
+summary(lm_cv10_step)
+lm_cv10_step$bestTune
+lm_cv10_step$results
+```
+All three groups perform the best together, so we will continue with predicting. 
+
+## 5.3 Final Model
+Run linear regression and check VIF
+```{r}
+lm_cv10 <- lm(minutes ~., data = reg)
+
+summary(lm_cv10)
+vif(lm_cv10)
+```
+All coefficients are statistically significant. There is no multicollinearity or non-significant predictors. RMSE of 0.1561 is pretty low, and the adjusted R-squared is 0.6763 which is decent. 
+
+## 5.4 Homoskedasticity and RMSE
+
+```{r}
+shapiro.test(residuals(lm_cv10))
+```
+The Shapiro-Wilks Test shows a p-value > 0.05 suggesting that the residuals are normally distributed. 
+
+```{r, fig.width=4, fig.height=3}
+hist(residuals(lm_cv10))
+```
+The histogram of residuals looks normal, but it is not perfect. 
+
+```{r}
+plot(lm_cv10, which = 1)
+```
+Not very good on the ends. 
+
+```{r}
+plot(lm_cv10, which = 2)
+```
+Not very good on the ends too. 
+
+```{r}
+sqrt(mean(lm_cv10$residuals^2))
+```
+RMSE a tad lower. 
+
+```{r}
+actual <- reg$minutes
+fitted <- unname(lm_cv10$fitted.values)
+
+act_fit <- cbind.data.frame(actual, fitted)
+
+ggplot(act_fit, aes(x = actual, y = fitted)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title = 'Actual vs Fitted values for log(minutes)', x = 'Actual Value', y = 'Fitted Values')
+```
+The line fits the data pretty well until the values get above 7.5. Many outliers appear here, and it seems to over predict the minutes played. 
+
+## Conclusion 
+For this assignment, I started out by wrangling data to certain variables and logged minutes I then created a PCA to find relevant variables and reduce dimensionality. I then used a 10-fold cross-validation with stepwise selection to model the data and predict salary.
+
+The final model ended up with three components - physicality, scoring prowess, and game impact. We got an RMSE of around 0.1549, which seems very low. Our r-squared around 0.67 is pretty decent, meaning that this model only explains about 67.63% or about two thirds of the variance. There is some value to this model because it seemed to somewhat accurately predict what a player’s minutes would be.
+
+A model like this would be useful for NBA teams who want to know about how much they should be playing their players. Knowing a player’s actual value is useful for many reasons, whether a star player isn't performing up to par because of old age and injuries, trying to justify why a player should be getting more minutes per game, or figuring out if a player is playing too many minutes and therefore should play less. 
+
+There were a couple limitations to this. The PER equation I used was a modified version of the actual PER equation the NBA uses. The real one used data that the dataset I used did not provide and an equation that was too long to fit on the page. The actual equation would've gifted more accurate results in the regression. The inherent randomness of basketball also makes it difficult to accurately predict anything numbers wise. A player could be in a shooting slump for who knows how long or a shot could be a game winner and be the whole impact of a game compared to a regular shot. 
+
+There’s a couple directions I could go with this. One could be including more players (international leagues) in the data set. Another could be doing a similar prediction model but with more intricate variables, and seeing if it is harder/easier to predict their minutes. Finally, I could aggregate this by values such as team or position, and see if there’s any meaningful patterns there. 
+
+
+
